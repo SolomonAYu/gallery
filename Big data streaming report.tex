@@ -1,0 +1,471 @@
+% This is samplepaper.tex, a sample chapter demonstrating the
+% LLNCS macro package for Springer Computer Science proceedings;
+% Version 2.21 of 2022/01/12
+%
+\documentclass[runningheads]{llncs}
+%
+\usepackage[T1]{fontenc}
+% T1 fonts will be used to generate the final print and online PDFs,
+% so please use T1 fonts in your manuscript whenever possible.
+% Other font encondings may result in incorrect characters.
+%
+\usepackage{graphicx}
+% Used for displaying a sample figure. If possible, figure files should
+% be included in EPS format.
+%
+% If you use the hyperref package, please uncomment the following two lines
+% to display URLs in blue roman font according to Springer's eBook style:
+%\usepackage{color}
+%\renewcommand\UrlFont{\color{blue}\rmfamily}
+%\urlstyle{rm}
+%
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\makeatletter
+\newcommand{\@chapapp}{\relax}%
+\makeatother
+
+%
+% Packages for this paper
+%
+\usepackage[title]{appendix}
+\usepackage[hyperfirst=false,shortcuts]{glossaries}
+\usepackage[colorinlistoftodos,color=yellow!20,]{todonotes}
+\usepackage{siunitx}
+\sisetup{
+  binary-units,
+  per-mode=symbol,
+  group-separator={,},
+  group-minimum-digits=4
+}
+
+%
+% User-defined commands
+%
+\newcounter{tbdcounter}
+\setcounter{tbdcounter}{0}
+\newcommand{\TBD}[1]{\addtocounter{tbdcounter}{1}{[\bf TBD\arabic{tbdcounter}}:
+{\it #1\/}{\bf ]}}
+
+%
+% User-defined SI units
+%
+\DeclareSIUnit{\tuple}{\text{T}}
+
+% Configuration for glossaries
+\setacronymstyle{long-short}
+
+%
+% Labels of glossaries and acronyms.
+% In many cases, we can use gls- commands and ac- commands interchangeably.
+%
+\newglossaryentry{C++}{name={\makebox{C\hspace{-.04em}\raisebox{.2em}{\tiny\bf
++}\hspace{-.06em}\raisebox{.2em}{\tiny\bf +}}},description={C++}}
+\newglossaryentry{YhSB}{name={Yahoo streaming benchmark},description={Yahoo
+Streaming Benchmark}}
+\newacronym[plural=SPEs,firstplural=stream processing engines]{SPE}{SPE}{stream
+processing engine}
+\newacronym{NUMA}{NUMA}{non-uniform memory access}
+\newacronym{SIMD}{SIMD}{single instruction multiple data}
+\newacronym{HLS}{HLS}{heterogeneous lookahead scheduling}
+\newacronym{RDMA}{RDMA}{Remote Direct Memory Access}
+\newacronym{RLAS}{RLAS}{Relative-Location Aware Scheduling}
+\newacronym{JVM}{JVM}{Java Virtual Machine}
+
+\glsdisablehyper
+\begin{document}
+%
+\title{Leveraging both worlds: Scale-up techniques for scale-out data stream
+processing}
+%
+\titlerunning{Internship Report, Winter 2024}
+% If the paper title is too long for the running head, you can set
+% an abbreviated paper title here
+%
+\author{Aoze Yu, Junhao~Zhu}
+\institute{
+Department of Computer Science and Engineering, Yonsei University\\
+50 Yonsei-ro, Seodaemun-gu, Seoul, Republic of Korea 03722\\
+%\email{lncs@springer.com}\\
+}
+%
+\maketitle              % typeset the header of the contribution
+%
+\begin{abstract}
+Big data stream processing emerged in academics and industry more than 20 years
+ago, and it has seen an increasing demand for its capability to process and
+analyze data in real time. Java-based streaming processing engines provide a
+platform that focuses on programmer productivity and accelerates scale-out
+deployment of real-time streaming analytics. However, stream processing engines
+are confronted with performance challenges because the current throughput
+performance does not fully utilize a single-node memory bandwidth, but the
+throughput is substantially limited by inefficient scale-out actors that
+include network communication channels between inter-node actors and
+inter-process communication channels between actors on the same node. We
+present a hybrid approach that balances the requirements and advantages of both
+worlds: vertical scaling and horizontal scaling. First, we eliminate
+inter-process communication channels and replace them with shared-memory
+buffers. Second, we minimize the number of actors by fusion of streaming
+operators. Third, we eliminate the global key-value store and replace it with
+our non-blocking global store, which preserves the semantics of the target
+workload. Lastly, we leverage the scale-out deployment of a stream topology on
+a multi-node streaming processing engine. We show that our hybrid solution
+significantly increases the throughput performance of a stream processing
+engine. We compare our results with existing approaches, validating our
+approach's scalability vertically and horizontally.
+%The abstract should briefly summarize the contents of the paper in
+%150--250 words.
+
+\keywords{Stream Processing Engines \and Cloud Computing \and Performance
+Measurements and Analysis}
+\end{abstract}
+%
+%
+%
+\section{Introduction}
+Scale-out data stream processing has been a leading technology for big data
+real-time analytics, with abundant availability of commodity cloud nodes such
+as Google Compute Engine and Amazon EC2. Early and recent
+\acp{SPE}~\cite{SparkStreaming2012,Storm2014,Flink2015,KafkaStreams2021} share
+\ac{JVM}-based architecture in common with prior batch processing engines,
+adopting the cloud scalability and leveraging the existing cloud software
+stacks such as Kafka and Redis.
+
+%\section{Background}
+%TBD.
+
+\section{Scale-up Optimization Techniques}
+
+\subsection{NUMA and Cache Locality}
+Several researches have succeeded in improving the throughput of \ac{SPE} by
+utilizing modern hardware. Optimization techniques that fall in this 
+category also benefit multi-nodearchitecture. Memory access often become the 
+bottleneck of stream processing. \emph{StreamBox}~\cite{StreamBox}, \emph{BriskStream}~\cite{BriskStream} and \emph{Grizzly}~\cite{Grizzly}
+attempt to maximize the \ac{NUMA} locality of the target system by explicitly
+pinning streams to a \ac{NUMA} region to reduce cross-\ac{NUMA} communication.
+%
+Grizzly presents an adaptive query compilation technique.  It detects the
+underlying \ac{NUMA} configuration and optimizes window aggregation by
+processing values inside a \ac{NUMA} region and merging those values between
+\ac{NUMA} regions only at each window end.
+%
+Their technique improves the processing bandwidth significantly because it
+minimizes the communication overhead between \ac{NUMA} regions.
+%
+BriskStream presents a \ac{NUMA}-aware streaming execution plan optimization,
+\emph{\ac{RLAS}}. A producer and a consumer on different sockets or on the same
+socket are examples of relative locations. 
+%
+\Ac{NUMA} distance influences the performance of an operator and makes it
+dependent to the current execution plan. Scheduling an operator to a socket may
+prohibit other operators to be scheduled to the same socket. Therefore,
+BriskStream introduces placement optimization heuristics to reduce the solution
+space.
+%
+%That is, NUMA-awareness facilitates optimized scheduling by introducing an
+%additional variable in terms of capability. However, the solution space
+%becomes excessively large due to dependencies on all previous decisions, which
+%might conflict with each other.
+Beside NUMA-awareness, increasing data locality reduces performance penalty.
+%
+For example, Grizzly uses hardware performance information such as the number
+of cache misses to determine the data characteristics and migrate the code
+based on the information.
+\emph{Saber}~\cite{SABER} load tuples from the same window into a GPGPU work
+group's cache memory to speed up serialization and deserialization.
+
+\subsection{SIMD parallelism in GPGPUs}
+Saber proposes to use the GPGPU computing resource for stream data processing.
+It takes advantage of GPGPU accelerators and their \ac{SIMD} parallelism. Saber
+is a hybrid stream processing engine that employs a \emph{\ac{HLS}} algorithm,
+which assigns tasks to either GPGPU or CPU based on recent query task
+throughput.
+%
+GPGPU follows the \ac{SIMD} model: a core executes the same operation on
+multiple data in each cycle. This allows the control logic to be simple.  As a
+result, while CPU suffers from the complexity of query operators, GPGPU is
+bounded by the data movement overhead. Saber also concluded CPU is faster when
+the selectivity, the fraction of rows chosen by the predicate, is low. On the
+contrary, GPGPU is faster with higher selectivity.
+
+
+\subsection{Shared Memory Communication}
+\Acp{SPE} intensively use network connections to deliver tuples
+from one node to another. \Acp{SPE} designed for a sigle node take advantage
+of shared-memory communication.
+%
+An operator in a stream pipeline may contain a blocking logic that requires the
+materialization of its result to some extent for the next operator. It needs to
+store the result before each emission. Zeuch~et al.~\cite{Zeuch2019} state that
+full materialization is impractical because streaming data is unbounded.
+Therefore partially materialized data is used instead. Then, they suggest that
+in constrast to interpretation-based model, operator fusion allows us to omit
+queues for message passing.
+They propose two strategies to distribute processing among computing units. We
+explain them in Section~\ref{sec:merge}.
+%
+Using their memory optimizations, their single-node \ac{C++} implementation
+achieves a maximum throughput of \SI{384}{\mega\tuple\per\second}, near memory
+bound.
+
+\subsection{Adaptive Query Compilation}
+To achieve better resource utilization, Grizzly~\cite{Grizzly} introduces query
+compilation which fuses operators at compile time, and performs all operators
+of a pipeline over a chunk of input records during query execution. Compilation
+into compact code fragments allows better utilization of registers and enables
+memory access via raw pointer. While code is statically generated, Grizzly is
+still able to exploit dynamic workload by adding a feed back loop between code
+generation and query execution. In details, there are four phases during query
+execution, each applies more aggressive optimization than the previous phase,
+except for the last profiling and adaptive optimization phase which provides a
+coarse-grained induction about data characteristics for Grizzly to re-optimize
+and generate new code variant.
+
+\subsection{Data Synchronization\label{sec:merge}}
+When the tuples need to be buffered, a queue is necessary at either the inbound
+of consumer or the outbound of producer. Zeuch~et al.~\cite{Zeuch2019} refer
+the former as upfront partitioning which is used by Flink, Spark, and Storm. In
+this case, data is shuffled and producers push the data to disjoint set of
+responsible consumers. On the other hand, the latter can be further divided
+into local merge and global merge distinguished by the timing of
+synchronization. Both local merge and global merge require consumers to fetch
+the data by their own. While local-merge producers store partial results
+locally and merge into global data structure when necessary, global-merge
+producers continuously synchronize during execution. Hazelcast
+Jet~\cite{Hazelcast} explicitly mentions they are using local merge approach,
+where local partial results are followed by global combining.
+
+\subsection{Coroutine-based Execution} 
+Hazelcast Jet~\cite{Hazelcast} does not spawn a thread for each operator.
+Instead, it deploys the complete dataflow graph on every available core. This
+prevents dataflow spanning over multiple machines therefore reducing network
+overhead. In addition, running tasks in single threaded loop and making them 
+voluntarily yield control avoids expensive operating system context switches.
+It allows execution thread to remain on the same CPU core for longer time
+periods, so that CPU cache lines are preserved. In this case, a task should
+never block otherwise all tasks sharing the execution thread would be
+influenced. Tasks communicate via shared-memory, more specifically wait-free
+single-producer-single-consumer queues.
+
+\section{Scale-out Optimization Techniques}
+
+\subsection{Comparison of Experimental Setups}
+
+\begin{table}[ht]
+  \centering
+  \begin{tabular}{|r|l|}
+  \hline
+  & Flink
+  \\ \hline
+  system version & Apache Flink 1.2.1
+  \\ \hline
+  hardware setups & 10 Kafka brokers with 2 partitions each
+  \\ \hline
+   & 10 compute machine
+  \\ \hline
+   & 1 Xeon E3-1230-V2@3.30GHz CPU 
+   \\
+   & and 32GB RAM
+   \\ \hline
+   & 10 GigE Ethernet between compute nodes 
+   \\ \hline
+   & 1GigE Ethernet between Kafka 
+   \\
+   & cluster and Flink/Storm nodes
+   \\ \hline
+   \# of cores per each node & 4
+   \\ \hline
+   \# of the ad campaigns & 100 distinct
+   \\ \hline
+   freq written into key-value table & 100 window per sec
+   \\ \hline
+   freq of final windows written & once per hour
+   \\
+   to the database &
+   \\ \hline
+   data generation & per-gen in kafka
+   \\ \hline
+   To query the window contents & Akka actor system
+   \\ \hline
+  \end{tabular}
+  \caption{Ververica Experimental Setup}
+  \end{table}
+  
+  \begin{table}[ht]
+  \centering
+  \begin{tabular}{|c|c|c|c|}
+  \hline
+  & Spark & KafkaStreams & Apache Flink
+  \\ \hline
+  system version & Runtime 3.1 & 0.10.2.1 & 1.2.1
+  \\ \hline
+  single-node version & 1 (c3.xlarge) & & 
+  \\ \hline
+  \# of worker nodes & 10 (r3.xlarge) & 10 (r3.xlarge) & 10 (r3.xlarge)
+  \\ \hline
+  \# of cores per node & 4 & 4 & 4
+  \\ \hline
+  & pre-generate & pre-generate & pre-generate
+  \\
+  data generation & in-memory & in Kafka & in-memory
+  \\ \hline
+  & in-memory & static table & in-memory
+  \\
+  key-value store (Redis) & (DataSet) & (KTable) & (HashMap)
+  \\
+  ad/campaign & does not affect & does not affect & 10 or 1
+  \\ \hline
+  & & & periodically log
+  \\
+  throughput & Streaming Query & & the number of records
+  \\
+  calculation & Listener & & processed to a log
+  \\ \hline
+  \end{tabular}
+  \caption{Databricks Experimental Setup}
+  \end{table}
+
+\subsection{Experimental Results}
+\subsubsection{Ververica}
+%
+In the context of the \gls{YhSB}, two variants were compared to showcase the
+effectiveness of a new approach. The first variant involved \num{1000000} 
+campaigns with windows stored and updated directly in the key-value store. 
+However, this approach led to the key-value store becoming a bottleneck at 
+around \SI{280000}{\tuple\per\second}, requiring significant scaling or 
+elimination of the store. The second variant addressed large windows and 
+numerous distinct keys, with a streaming application updating
+millions of entries per second in the key-value store. The developers of 
+Ververica proposed a new architecture to eliminated the key-value store bottleneck, 
+achieving a throughput of \SI{15000000}{\tuple\per\second}. 
+%
+In experiments with Flink on Databricks Runtime-3.4, Vererica developers utilized Spark-2.2 
+with some 2.3 functionality and Apache Flink-1.2.1, and achieved the following throughput results: 
+Compared to Spark's \SI{2500000}{\tuple\per\second}, Flink achieves a higher throughput 
+of \SI{4000000}{\tuple\per\second} compared to Spark's \SI{2500000}{\tuple\per\second}
+and records consistent performance as the number of advertisements increases from \num{1} to \num{10}.
+%
+\subsubsection{Databricks}
+%
+In attempting to replicate Flink's performance results, Databricks researchers made the following observations: 
+Flink achieved \SI{16000000}{\tuple\per\second} throughput on Databricks using commercial cloud hardware when generating
+one ad per campaign, but throughput dropped to only \SI{1000000}{\tuple\per\second}
+when generating \num{10} ads per campaign. In the final benchmark setup in Databricks Community Edition, Spark's throughput
+was 1.5 times that of Flink at \SI{2500000}{\tuple\per\second}. The benchmark was scaled up to a total of \num{40} cores on 
+\num{10} worker nodes per system, and the results showed that Spark's throughput was 2.9 times
+that of Flink reaching \SI{60000000}{\tuple\per\second}.
+
+\subsection{Actors}
+Actor fusion is a concept in Akka where multiple actors are merged or combined into a single actor. 
+This is usually done for performance optimization and better resource utilization. Ververica developers 
+used Akka to create an actor system to support a queryable state, allowing external systems to query 
+the state of the Flink application through Akka actors. In conclusion, Actors act as an entry point for 
+handling state queries in a distributed system. Also, manages the interaction with the “RetrievalService” for 
+actor URL retrieval and ensures fault tolerance through failover mechanisms, caching, and periodic cache refresh.
+
+\subsection{Data Generator}
+\subsubsection{Databricks}
+
+To solve the global store bottleneck, the experiment chose to eliminate the dependence on external store systems
+such as Redis. This leads to the need for internal data generators to produce the data required for system operation
+while avoiding the communication overhead with external store systems. In-memory joins or hashmap lookups were 
+used as alternatives in the experiments to generate test data. This approach might include dynamically building 
+data structures in memory or leveraging hashmap for fast data retrieval to better suit the needs of 
+stream processing systems.
+
+\subsubsection{Ververica}
+The Flink window operator acts as a Kafka consumer to ingest incoming streaming data. 
+Flink's windowing mechanism allows the efficient handling of data within these specified 
+windows and based on time intervals.
+
+\subsection{Native Window Operators}
+Researchers of Ververica have developed a custom operator for Flink, designed to compute windows
+and enable querying the state externally from the streaming system through Akka. 
+It includes the capability to start a registration service and initialize the Akka Actor system.
+Once registered, it can handle external query requests. 
+%
+Additionally, the operator is equipped to process elements from the input stream, 
+determining which window an element belongs to and updating the corresponding key's count and access time in the window.
+It also asynchronously saves the operator's state and other window information to the state backend during checkpointing,
+returning an asynchronous state handle. In summary, this custom operator facilitates window computation, 
+and state querying through Akka, and integrates seamlessly with Flink's checkpointing mechanism, 
+showcasing Ververica's research contributions to Flink's functionality.
+\subsection{Eliminate key-value bottlenecks}
+\subsubsection{Ververica}
+%
+For stream processing applications with large windows and a large number of different key-value pairs, 
+the traditional approach is to periodically write the data in the window to a key-value store for querying. 
+However, this can result in a large number of write and query operations, increasing the load on the database. 
+The Ververica researchers' solution was to directly expose the real-time window as queryable, 
+avoiding the overhead of periodic writes to the database, while using Akka actors to implement real-time queries. 
+%
+In traditional scenarios, the database can easily become a performance bottleneck when processing 
+a large number of events. In order to solve this problem, the article mentioned using Flink's window operator 
+and local state to replace the traditional database. Flink window operators allow state to be maintained locally, 
+thus avoiding communication overhead with remote databases and improving processing speed.
+
+\subsubsection{Databricks}
+%
+The benchmark is designed to ensure that the streaming system itself is the bottleneck, not an external service. 
+To achieve this goal, the authors removed Redis from the original \gls{YhSB} to simplify the benchmark 
+and focus on measuring the performance of the streaming system. For Flink and Spark, data is generated in memory. 
+For Kafka Streams, data needs to be persisted in Kafka, the data is generated using Spark and then written to Kafka.
+
+\subsection{Network Communication}
+Inter-node communication is often conducted using
+traditional TCP/IP transport layer protocol. Zeuch~et al suggest that \ac{RDMA}
+enables direct access to memory of remote machine bypassing the remote CPU.
+This can be beneficial in three ways.
+\begin{enumerate}
+\item Remote CPU resource is not consumed
+\item Remote CPU cache is not polluted
+\item Traffic does not go through software network stack
+\end{enumerate}
+
+%\section{Related Work}
+%TBD.
+
+%\section{Conclusions}
+%TBD.
+
+
+\begin{credits}
+\subsubsection{\ackname}
+This is acknowledgment.
+
+\end{credits}
+%
+% ---- Bibliography ----
+%
+% BibTeX users should specify bibliography style 'splncs04'.
+% References will then be sorted and formatted in the correct style.
+%
+\bibliographystyle{splncs04}
+% \bibliography{mybibliography}
+%
+\bibliography{references.bib}
+
+\iffalse
+\clearpage
+\newpage
+\begin{subappendices}
+\renewcommand{\thesection}{\arabic{section}}
+\section{Analyzing efficient stream processing on modern hardware \cite{Zeuch2019}}
+\subsection{Strategy 1: Upfront Partitioning}
+Used by Flink, Spark, and Storm, upfront partitioning is a strategy that shuffles intermediate data among n producers and m consumers. Producers are mapped to disjoint set of responsible consumers.
+
+\subsection{Strategy 2: Local Merge}
+Consumers pull data by their own. Each worker stores the partial results locally, and those results are merged into global data structure when data is required by pipeline-breaker.
+
+\subsection{Strategy 3: Global Merge}
+In contrast to local merge, global merge does not need merging step at the end. All workers synchronize their result to the global data structure during execution.
+
+\end{subappendices}
+\fi
+
+\end{document}
